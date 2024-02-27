@@ -69,11 +69,11 @@ module sys_top
 
 `else
 	//////////// VGA ///////////
-	output  [5:0] VGA_R,
-	output  [5:0] VGA_G,
-	output  [5:0] VGA_B,
-	inout         VGA_HS,  // VGA_HS is secondary SD card detect when VGA_EN = 1 (inactive)
-	output		  VGA_VS,
+	output reg [5:0] VGA_R,
+	output reg [5:0] VGA_G,
+	output reg [5:0] VGA_B,
+	inout  reg       VGA_HS,  // VGA_HS is secondary SD card detect when VGA_EN = 1 (inactive)
+	output reg		  VGA_VS,
 	input         VGA_EN,  // active low
 
 	/////////// AUDIO //////////
@@ -1363,6 +1363,17 @@ csync csync_vga(clk_vid, vga_hs_osd, vga_vs_osd, vga_cs_osd);
 		.vsync_o(vga_vs_t),
 		.csync_o(vga_cs_t)
 	);
+	
+	wire [17:0] pwm_o;
+	vga_pwm vga_pwm
+	(
+		.clk(clk_vid),
+		.csync_en(csync_en),
+		.hsync(vga_hs),
+		.csync(vga_cs),
+		.din(vga_o),
+		.dout(pwm_o)
+	);
 
 `ifndef MISTER_DISABLE_YC
 	reg         pal_en;
@@ -1396,12 +1407,16 @@ csync csync_vga(clk_vid, vga_hs_osd, vga_vs_osd, vga_cs_osd);
 `endif
 
 	wire cs1 = (vga_fb | vga_scaler) ? vgas_cs : vga_cs;
-
-	assign VGA_VS = (VGA_EN | SW[3]) ? 1'bZ      : (((vga_fb | vga_scaler) ? (~vgas_vs ^ VS[12])                         : VGA_DISABLE ? 1'd1 : ~vga_vs) | csync_en);
-	assign VGA_HS = (VGA_EN | SW[3]) ? 1'bZ      :  ((vga_fb | vga_scaler) ? ((csync_en ? ~vgas_cs : ~vgas_hs) ^ HS[12]) : VGA_DISABLE ? 1'd1 : (csync_en ? ~vga_cs : ~vga_hs));
-	assign VGA_R  = (VGA_EN | SW[3]) ? 6'bZZZZZZ :   (vga_fb | vga_scaler) ? vgas_o[23:18]                               : VGA_DISABLE ? 6'd0 : vga_o[23:18];
-	assign VGA_G  = (VGA_EN | SW[3]) ? 6'bZZZZZZ :   (vga_fb | vga_scaler) ? vgas_o[15:10]                               : VGA_DISABLE ? 6'd0 : vga_o[15:10];
-	assign VGA_B  = (VGA_EN | SW[3]) ? 6'bZZZZZZ :   (vga_fb | vga_scaler) ? vgas_o[7:2]                                 : VGA_DISABLE ? 6'd0 : vga_o[7:2]  ;
+	
+	wire clk_vga = (vga_fb | vga_scaler) ? clk_hdmi : clk_vid;
+	
+always @(posedge clk_vga) begin
+	VGA_VS <= (VGA_EN | SW[3]) ? 1'bZ      : (((vga_fb | vga_scaler) ? (~vgas_vs ^ VS[12])                         : VGA_DISABLE ? 1'd1 : ~vga_vs) | csync_en);
+	VGA_HS <= (VGA_EN | SW[3]) ? 1'bZ      :  ((vga_fb | vga_scaler) ? ((csync_en ? ~vgas_cs : ~vgas_hs) ^ HS[12]) : VGA_DISABLE ? 1'd1 : (csync_en ? ~vga_cs : ~vga_hs));
+	VGA_R  <= (VGA_EN | SW[3]) ? 6'bZZZZZZ :   (vga_fb | vga_scaler) ? vgas_o[23:18]                               : VGA_DISABLE ? 6'd0 : pwm_o[17:12];
+	VGA_G  <= (VGA_EN | SW[3]) ? 6'bZZZZZZ :   (vga_fb | vga_scaler) ? vgas_o[15:10]                                : VGA_DISABLE ? 6'd0 : pwm_o[11:6];
+	VGA_B  <= (VGA_EN | SW[3]) ? 6'bZZZZZZ :   (vga_fb | vga_scaler) ? vgas_o[7:2]                                 : VGA_DISABLE ? 6'd0 : pwm_o[5:0];
+end
 `endif
 
 reg video_sync = 0;
